@@ -143,6 +143,11 @@
     button { transition: opacity 0.15s, transform 0.1s; }
     button:active { transform: scale(0.97); }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .prefix-select { background: #131720; border: 1px solid #2d3548; border-radius: 6px; color: #e2e8f0; padding: 5px 8px; font-size: 0.82rem; font-family: 'JetBrains Mono', monospace; cursor: pointer; }
+    .prefix-select:focus { outline: none; border-color: #6366f1; }
+    .strip-tex-wrap { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: #94a3b8; cursor: pointer; white-space: nowrap; }
+    .strip-tex-cb { accent-color: #6366f1; cursor: pointer; }
+    .model-name-preview { color: #475569; font-size: 0.76rem; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -325,8 +330,9 @@ function parseFBXNode(dv, data, offset, end, ptrSize) {
     else if (tc==='L') { props.push({t:tc,v:dv.getUint32(offset,true)}); offset+=8; }
     else if (tc==='S'||tc==='R') {
       const len = dv.getUint32(offset,true); offset+=4;
+      const dataStart = offset;
       const raw = data.slice(offset,offset+len);
-      props.push({t:tc,v:tc==='S'?new TextDecoder('utf-8',{fatal:false}).decode(raw):raw});
+      props.push({t:tc,v:tc==='S'?new TextDecoder('utf-8',{fatal:false}).decode(raw):raw,dataOff:dataStart,dataLen:len});
       offset+=len;
     } else if (tc==='B') {
       const len = dv.getUint32(offset,true); offset+=4;
@@ -385,11 +391,16 @@ function parseFBX(buffer) {
         }
       }
     }
-    let raw = null;
+    let raw = null, contentOff = -1, contentLen = 0;
     for (const child of video.children) {
       if (child.name==='Content') {
         for (const p of child.props) {
-          if ((p.t==='R'||p.t==='B')&&p.v&&p.v.length>4) { raw=p.v; break; }
+          if ((p.t==='R'||p.t==='B')&&p.v&&p.v.length>4) {
+            raw=p.v;
+            contentOff = p.dataOff !== undefined ? p.dataOff : -1;
+            contentLen = p.dataLen || 0;
+            break;
+          }
         }
       }
     }
@@ -399,7 +410,7 @@ function parseFBX(buffer) {
       raw = raw.slice(4);
     }
     const ext = detectExt(raw);
-    entries.push({ origName:texName, suggested:normalizeName(texName,ext), data:raw });
+    entries.push({ origName:texName, suggested:normalizeName(texName,ext), data:raw, contentOff, contentLen });
   }
   return entries;
 }
@@ -493,6 +504,17 @@ async function processBuffer(buffer, ext) {
   return null;
 }
 
+// ── Strip embedded textures from FBX ───────────────────────────────────────
+function stripFBXContent(buffer, entries) {
+  const data = new Uint8Array(buffer.slice(0));
+  for (const e of entries) {
+    if (e.contentOff >= 0 && e.contentLen > 0) {
+      data.fill(0, e.contentOff, e.contentOff + e.contentLen);
+    }
+  }
+  return data.buffer;
+}
+
 // ── FBX binary patch ───────────────────────────────────────────────────────
 function indexOfBytes(hay, needle, start=0) {
   outer: for (let i=start; i<=hay.length-needle.length; i++) {
@@ -570,6 +592,9 @@ async function exportCard(cardId) {
   try {
     const baseName = body.querySelector('.base-name-input')?.value?.trim() ||
                      s.filename.replace(/\.[^.]+$/,'');
+    const meshPrefix = body.querySelector('.mesh-prefix-select')?.value ?? '';
+    const texPrefix = body.querySelector('.tex-prefix-select')?.value ?? '';
+    const stripTex = body.querySelector('.strip-tex-cb')?.checked ?? false;
     const renameMap = {};
     const filesToSave = [];
     const tbody = body.querySelector('.texture-rows');
@@ -580,17 +605,20 @@ async function exportCard(cardId) {
         if (!entry) continue;
         const suffix = tr.querySelector('.suffix-input')?.value ?? '';
         const ext = detectExt(entry.data);
-        const newName = baseName ? (baseName+suffix+ext) : entry.suggested;
+        const newName = texPrefix + (baseName ? (baseName+suffix+ext) : entry.suggested);
         filesToSave.push({ name: newName, data: entry.data });
         renameMap[entry.origName] = newName;
       }
     }
     // Patch model
     if (s.srcBuffer && s.srcExt) {
+      const modelBase = meshPrefix + baseName;
+      let srcBuf = s.srcBuffer;
+      if (stripTex && s.srcExt==='.fbx') srcBuf = stripFBXContent(srcBuf, s.entries);
       let model = null;
-      if (s.srcExt==='.fbx') model = patchFBX(s.srcBuffer, renameMap, baseName);
-      else if (s.srcExt==='.glb') model = patchGLB(s.srcBuffer, renameMap, baseName);
-      filesToSave.push(model || { name: baseName+s.srcExt, data: new Uint8Array(s.srcBuffer) });
+      if (s.srcExt==='.fbx') model = patchFBX(srcBuf, renameMap, modelBase);
+      else if (s.srcExt==='.glb') model = patchGLB(srcBuf, renameMap, meshPrefix + baseName);
+      filesToSave.push(model || { name: modelBase+s.srcExt, data: new Uint8Array(srcBuf) });
     }
 
     if (targetDirHandle) {
@@ -696,6 +724,20 @@ function renderCardBody(cardId, entries, modelStem) {
     <div class="base-name-row">
       <span class="base-name-label">Baza</span>
       <input class="base-name-input" type="text" spellcheck="false" value="${escHtml(modelStem)}" />
+      <span class="base-name-label" style="margin-left:4px">Mesh</span>
+      <select class="mesh-prefix-select prefix-select">
+        <option value="">—</option>
+        <option value="SM_">SM_</option>
+        <option value="SK_">SK_</option>
+        <option value="BP_">BP_</option>
+      </select>
+      <span class="base-name-label">Tex</span>
+      <select class="tex-prefix-select prefix-select">
+        <option value="">—</option>
+        <option value="T_">T_</option>
+      </select>
+      ${s.srcExt==='.fbx' ? '<label class="strip-tex-wrap"><input type="checkbox" class="strip-tex-cb" checked> Strip FBX</label>' : ''}
+      <span class="model-name-preview"></span>
       <span class="base-name-preview"></span>
     </div>
     ${hasTextures ? `
@@ -742,6 +784,9 @@ function renderCardBody(cardId, entries, modelStem) {
     });
   }
   body.querySelector('.base-name-input').addEventListener('input', () => updateResultCells(cardId));
+  body.querySelectorAll('.mesh-prefix-select, .tex-prefix-select').forEach(sel => {
+    sel.addEventListener('change', () => updateResultCells(cardId));
+  });
   updateResultCells(cardId);
   body.querySelector('.btn-export-card').addEventListener('click', () => exportCard(cardId));
   showCardStatus(cardId, hasTextures?`Znaleziono ${entries.length} textur.`:'Brak embedded textur.', hasTextures?'ok':'info');
@@ -752,6 +797,8 @@ function updateResultCells(cardId) {
   const body = s.cardEl.querySelector('.card-body');
   const baseInput = body.querySelector('.base-name-input'); if (!baseInput) return;
   const base = baseInput.value.trim();
+  const meshPrefix = body.querySelector('.mesh-prefix-select')?.value ?? '';
+  const texPrefix = body.querySelector('.tex-prefix-select')?.value ?? '';
   const tbody = body.querySelector('.texture-rows');
   if (tbody) {
     for (const tr of tbody.querySelectorAll('tr')) {
@@ -762,16 +809,20 @@ function updateResultCells(cardId) {
       const ext = '.'+fmt.toLowerCase();
       const suffix = suffixInp.value;
       resultCell.innerHTML = base
-        ? `<span class="result-base">${escHtml(base)}</span><span class="result-suffix">${escHtml(suffix)}</span><span class="result-ext">${escHtml(ext)}</span>`
+        ? `<span class="result-base">${escHtml(texPrefix+base)}</span><span class="result-suffix">${escHtml(suffix)}</span><span class="result-ext">${escHtml(ext)}</span>`
         : `<span style="color:#3d4a63">—</span>`;
     }
+  }
+  const modelPreview = body.querySelector('.model-name-preview');
+  if (modelPreview) {
+    modelPreview.textContent = base ? ('→ ' + meshPrefix + base + (s.srcExt||'')) : '';
   }
   const preview = body.querySelector('.base-name-preview');
   if (preview&&s.entries.length) {
     const parts = s.entries.slice(0,3).map((e,i) => {
       const inp = tbody?.querySelector(`[data-id="${i}"]`);
       const suffix = inp?inp.value:(detectSuffixes(s.entries)[i]||'');
-      return base+(base?suffix:'')+'.'+(detectExt(e.data).slice(1));
+      return texPrefix+base+(base?suffix:'')+'.'+(detectExt(e.data).slice(1));
     });
     preview.textContent = parts.join(', ')+(s.entries.length>3?'…':'');
   } else if (preview) { preview.textContent=''; }
