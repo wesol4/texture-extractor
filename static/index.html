@@ -417,7 +417,22 @@ async function findModelsInZIP(buffer) {
     const ext = (path.match(/\.[^.]+$/)||[''])[0].toLowerCase();
     if (!MODEL_EXTS.has(ext)) continue;
     const ab = await file.async('arraybuffer');
-    found.push({ name: path.split('/').pop(), ext, buffer: ab });
+    // Look for companion .fbm folder (same stem, .fbm extension)
+    const stem = path.replace(/\.[^.]+$/, '');
+    const fbmPrefix = stem + '.fbm/';
+    const fbmImages = [];
+    for (const [imgPath, imgFile] of Object.entries(zip.files)) {
+      if (imgFile.dir) continue;
+      if (!imgPath.toLowerCase().startsWith(fbmPrefix.toLowerCase())) continue;
+      const imgExt = (imgPath.match(/\.[^.]+$/)||[''])[0].toLowerCase();
+      if (!IMAGE_EXTS.has(imgExt)) continue;
+      const imgAb = await imgFile.async('arraybuffer');
+      const imgData = new Uint8Array(imgAb);
+      const det = detectExt(imgData);
+      const basename = imgPath.split('/').pop();
+      fbmImages.push({ origName: basename, suggested: normalizeName(basename, det), data: imgData });
+    }
+    found.push({ name: path.split('/').pop(), ext, buffer: ab, fbmImages });
   }
   return found.sort((a,b) => a.name.localeCompare(b.name));
 }
@@ -729,7 +744,7 @@ async function processFileToCard(cardId, file) {
       setCardProgress(cardId, 80);
       if (!models.length) throw new Error('ZIP nie zawiera pliku FBX / GLB / USDZ');
       if (models.length===1) {
-        await loadModelToCard(cardId, models[0].buffer, models[0].ext, models[0].name);
+        await loadModelToCard(cardId, models[0].buffer, models[0].ext, models[0].name, models[0].fbmImages);
       } else {
         renderZipChoice(cardId, models);
       }
@@ -742,13 +757,15 @@ async function processFileToCard(cardId, file) {
   }
 }
 
-async function loadModelToCard(cardId, buffer, ext, filename) {
+async function loadModelToCard(cardId, buffer, ext, filename, fbmImages=[]) {
   const s = sessions.get(cardId); if (!s) return;
   s.srcBuffer = buffer;
   s.srcExt = ext;
   setCardProgress(cardId, 80);
   let entries = await processBuffer(buffer, ext);
   if (!entries) entries = [];
+  // Fallback: use companion .fbm images if no embedded textures found
+  if (entries.length === 0 && fbmImages.length > 0) entries = fbmImages;
   setCardProgress(cardId, 100);
   const stem = filename.replace(/\.[^.]+$/,'');
   s.cardEl.querySelector('.card-filename').textContent = filename;
@@ -769,7 +786,7 @@ function renderZipChoice(cardId, models) {
     btn.addEventListener('click', async () => {
       const m = models[parseInt(btn.dataset.idx)];
       body.innerHTML = `<div class="card-status info">Wczytywanie ${escHtml(m.name)}…</div>`;
-      await loadModelToCard(cardId, m.buffer, m.ext, m.name);
+      await loadModelToCard(cardId, m.buffer, m.ext, m.name, m.fbmImages);
     });
   });
 }
