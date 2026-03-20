@@ -146,8 +146,7 @@
 
 <div class="main-container">
   <div class="global-bar">
-    <span style="color:#64748b;font-size:0.82rem">Pliki są przetwarzane lokalnie — nic nie jest wysyłane na serwer.</span>
-    <button id="btn-export-all" type="button">Pobierz wszystko</button>
+    <button id="btn-export-all" type="button">Zapisz wszystko</button>
     <button id="btn-clear-all" type="button">Wyczyść</button>
   </div>
 
@@ -555,7 +554,7 @@ async function exportCard(cardId) {
     exportRes.textContent = 'Błąd: '+err.message;
   } finally {
     btnExport.disabled = false;
-    btnExport.textContent = 'Pobierz ZIP';
+    btnExport.textContent = 'Zapisz plik';
   }
 }
 
@@ -650,7 +649,7 @@ function renderCardBody(cardId, entries, modelStem) {
     ` : `<div class="no-texture-msg">Brak textur — plik zostanie spakowany z nową nazwą bazową.</div>`}
     <div class="card-actions">
       <span class="card-actions-hint">${hasTextures?entries.length+' textur':'brak textur'}</span>
-      <button class="btn-export-card" type="button">Pobierz ZIP</button>
+      <button class="btn-export-card" type="button">Zapisz plik</button>
     </div>
     <div class="card-export-result"></div>`;
   const tbody = body.querySelector('.texture-rows');
