@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv
+venv/
+
+# Sesje tymczasowe serwera
+/tmp/
+texext_*/
+
+# OS
+.DS_Store
+Thumbs.db

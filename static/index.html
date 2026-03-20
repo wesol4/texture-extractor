@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Texture Extractor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 80px;
+    }
+
+    h1 { font-size: 1.6rem; font-weight: 600; color: #f8fafc; margin-bottom: 8px; letter-spacing: -0.02em; }
+    .subtitle { color: #64748b; font-size: 0.9rem; margin-bottom: 32px; }
+
+    /* ── Width container ── */
+    .main-container {
+      width: 100%;
+      max-width: 860px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    /* ── Global settings bar ── */
+    .global-bar {
+      background: #171c28;
+      border: 1px solid #2d3548;
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .global-bar-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .settings-label {
+      color: #64748b;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #output-dir-input {
+      flex: 1;
+      min-width: 200px;
+      background: #131720;
+      border: 1px solid #2d3548;
+      border-radius: 6px;
+      color: #e2e8f0;
+      padding: 6px 10px;
+      font-size: 0.82rem;
+      font-family: 'JetBrains Mono', monospace;
+      transition: border-color 0.15s;
+    }
+    #output-dir-input:focus { outline: none; border-color: #6366f1; }
+    #output-dir-input.has-value { border-color: #16a34a55; color: #86efac; }
+
+    .browse-btn {
+      background: #252b3b;
+      border: 1px solid #2d3548;
+      border-radius: 6px;
+      color: #94a3b8;
+      padding: 6px 10px;
+      font-size: 1rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .browse-btn:hover { border-color: #6366f1; color: #e2e8f0; }
+
+    #output-hint { color: #475569; font-size: 0.75rem; white-space: nowrap; }
+
+    .global-resolved-hint {
+      font-size: 0.75rem;
+      color: #475569;
+      font-family: 'JetBrains Mono', monospace;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 0 2px;
+    }
+    .global-resolved-hint.relative { color: #f59e0b99; }
+    .global-resolved-hint.absolute { color: #16a34a88; }
+
+    .set-src-btn {
+      background: #252b3b;
+      border: 1px solid #f59e0b44;
+      border-radius: 5px;
+      color: #f59e0b;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 0.15s;
+    }
+    .set-src-btn:hover { border-color: #f59e0b; }
+
+    .global-bar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-top: 4px;
+      border-top: 1px solid #2d354822;
+    }
+    #lnk-pick {
+      cursor: pointer;
+      color: #6366f1;
+      font-weight: 500;
+      font-size: 0.85rem;
+      background: none;
+      border: none;
+      padding: 0;
+      text-decoration: underline;
+      text-decoration-color: #6366f144;
+    }
+    #lnk-pick:hover { color: #818cf8; }
+
+    #btn-export-all {
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 18px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      margin-left: auto;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    #btn-export-all:hover { background: #4f46e5; }
+    #btn-export-all:disabled { opacity: 0.4; cursor: not-allowed; }
+    #btn-clear-all {
+      background: transparent; color: #64748b;
+      border: 1px solid #2d3548; border-radius: 8px;
+      padding: 7px 18px; font-size: 0.85rem; font-weight: 500;
+      cursor: pointer; transition: border-color 0.15s, color 0.15s;
+    }
+    #btn-clear-all:hover { border-color: #ef4444; color: #ef4444; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(12px);
+      background: #2d3548; color: #e2e8f0; border: 1px solid #6366f1;
+      border-radius: 8px; padding: 10px 20px; font-size: 0.875rem;
+      opacity: 0; transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none; z-index: 9999; white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Drop zone ── */
+    #drop-zone {
+      border: 2px dashed #3d4a63;
+      border-radius: 10px;
+      padding: 42px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      margin-bottom: 20px;
+    }
+    #drop-zone:hover, #drop-zone.dragover {
+      border-color: #6366f1;
+      background: #1a1f2e;
+    }
+    #drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .drop-icon { font-size: 2.4rem; margin-bottom: 10px; }
+    .drop-text { color: #94a3b8; font-size: 0.95rem; }
+    .drop-text span { color: #6366f1; font-weight: 500; }
+    .drop-formats { color: #475569; font-size: 0.8rem; margin-top: 6px; }
+
+    /* ── Session cards container ── */
+    #sessions-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ── Session card ── */
+    .session-card {
+      background: #1e2330;
+      border: 1px solid #2d3548;
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .session-card.card-dragover {
+      border-color: #6366f1;
+      background: #1a1f2e;
+    }
+
+    /* Card header */
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: #171c28;
+      border-bottom: 1px solid #2d3548;
+      user-select: none;
+    }
+    .card-filename {
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: #e2e8f0;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .card-format-badge {
+      display: inline-block;
+      background: #1e3a5f;
+      color: #93c5fd;
+      font-size: 0.67rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+      flex-shrink: 0;
+    }
+    .card-collapse-btn {
+      background: none;
+      border: none;
+      color: #64748b;
+      cursor: pointer;
+      padding: 4px 6px;
+      font-size: 0.85rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+      transition: color 0.15s;
+    }
+    .card-collapse-btn:hover { color: #e2e8f0; }
+    .card-remove-btn {
+      background: none;
+      border: none;
+      color: #475569;
+      cursor: pointer;
+      padding: 4px 7px;
+      font-size: 1rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+      transition: color 0.15s, background 0.15s;
+    }
+    .card-remove-btn:hover { color: #f87171; background: #3b181833; }
+
+    /* Card body */
+    .card-body {
+      padding: 20px 20px 16px;
+    }
+    .card-body.collapsed { display: none; }
+
+    /* Status in card */
+    .card-status {
+      display: none;
+      margin-bottom: 14px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    .card-status.info  { display: block; background: #1e3a5f; color: #93c5fd; border: 1px solid #2563eb44; }
+    .card-status.error { display: block; background: #3b1818; color: #fca5a5; border: 1px solid #dc262644; }
+    .card-status.ok    { display: block; background: #14532d; color: #86efac; border: 1px solid #16a34a44; }
+
+    .card-progress-bar {
+      display: none;
+      height: 3px;
+      background: #2d3548;
+      border-radius: 2px;
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .card-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #6366f1, #a78bfa);
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    /* Section titles */
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 8px;
+    }
+
+    /* Base name row */
+    .base-name-row {
+      background: #131720;
+      border: 1px solid #2d3548;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .base-name-label { color: #94a3b8; font-size: 0.82rem; white-space: nowrap; flex-shrink: 0; }
+    .base-name-input {
+      flex: 1;
+      min-width: 140px;
+      max-width: 280px;
+      background: #0f1117;
+      border: 1px solid #3d4a63;
+      border-radius: 6px;
+      color: #f1f5f9;
+      padding: 5px 10px;
+      font-size: 0.88rem;
+      font-weight: 500;
+      font-family: 'JetBrains Mono', monospace;
+      transition: border-color 0.15s;
+    }
+    .base-name-input:focus { outline: none; border-color: #6366f1; }
+    .base-name-preview {
+      color: #475569;
+      font-size: 0.76rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Texture table */
+    .texture-table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    thead th {
+      text-align: left;
+      padding: 7px 10px;
+      color: #64748b;
+      font-weight: 500;
+      border-bottom: 1px solid #2d3548;
+      font-size: 0.77rem;
+    }
+    tbody tr:hover { background: #252b3b; }
+    td { padding: 7px 10px; border-bottom: 1px solid #1e2330; vertical-align: middle; }
+
+    .badge {
+      display: inline-block;
+      background: #1e3a5f;
+      color: #93c5fd;
+      font-size: 0.67rem;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .size-cell { color: #475569; font-size: 0.8rem; }
+    .orig-cell {
+      color: #94a3b8;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Suffix dropdown */
+    .suffix-wrap { position: relative; display: flex; gap: 4px; }
+    .suffix-input {
+      background: #131720;
+      border: 1px solid #2d3548;
+      border-radius: 6px;
+      color: #e2e8f0;
+      padding: 5px 8px;
+      font-size: 0.82rem;
+      flex: 1;
+      min-width: 0;
+      font-family: 'JetBrains Mono', monospace;
+      transition: border-color 0.15s;
+    }
+    .suffix-input:focus { outline: none; border-color: #6366f1; }
+    .suffix-input.modified { border-color: #f59e0b88; }
+
+    .suffix-drop-btn {
+      background: #131720;
+      border: 1px solid #2d3548;
+      border-radius: 6px;
+      color: #64748b;
+      padding: 5px 7px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .suffix-drop-btn:hover { border-color: #6366f1; color: #e2e8f0; }
+
+    .suffix-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      background: #1e2330;
+      border: 1px solid #2d3548;
+      border-radius: 8px;
+      z-index: 200;
+      min-width: 160px;
+      box-shadow: 0 8px 24px #0006;
+      overflow: hidden;
+    }
+    .suffix-menu.open { display: block; }
+    .suffix-menu-group-label {
+      font-size: 0.68rem;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 6px 14px 2px;
+      font-weight: 600;
+    }
+    .suffix-menu button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      border-radius: 0;
+      color: #94a3b8;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+    }
+    .suffix-menu button:hover { background: #252b3b; color: #e2e8f0; }
+    .suffix-menu .menu-sep { height: 1px; background: #2d3548; margin: 4px 0; }
+
+    /* Result cell */
+    .result-cell {
+      color: #64748b;
+      font-size: 0.8rem;
+      font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap;
+    }
+    .result-cell .result-base { color: #818cf8; }
+    .result-cell .result-suffix { color: #94a3b8; }
+    .result-cell .result-ext { color: #475569; }
+
+    /* Thumbnail */
+    .thumb {
+      width: 36px;
+      height: 36px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid #2d3548;
+      cursor: zoom-in;
+      display: block;
+      background: #131720;
+    }
+    .thumb:hover { border-color: #6366f1; }
+
+    /* No-texture message */
+    .no-texture-msg {
+      color: #475569;
+      font-size: 0.85rem;
+      padding: 14px 0 4px;
+      font-style: italic;
+    }
+
+    /* Export actions row */
+    .card-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .card-actions-hint {
+      flex: 1;
+      color: #475569;
+      font-size: 0.77rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .btn-export-card {
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 20px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s, transform 0.1s;
+      min-width: 130px;
+    }
+    .btn-export-card:hover { background: #4f46e5; }
+    .btn-export-card:active { transform: scale(0.97); }
+    .btn-export-card:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Export result inline */
+    .card-export-result {
+      display: none;
+      margin-top: 10px;
+      padding: 9px 14px;
+      border-radius: 7px;
+      font-size: 0.82rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .card-export-result.ok  { display: block; background: #14532d; color: #86efac; border: 1px solid #16a34a44; }
+    .card-export-result.err { display: block; background: #3b1818; color: #fca5a5; border: 1px solid #dc262644; }
+
+    /* Lightbox */
+    #lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      background: #000000cc;
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: 8px;
+      border: 1px solid #2d3548;
+      box-shadow: 0 0 60px #0008;
+    }
+    #lightbox-label {
+      position: absolute;
+      bottom: 24px;
+      color: #94a3b8;
+      font-size: 0.85rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ZIP choice card content */
+    .zip-choice-wrap {
+      padding: 4px 0;
+    }
+    .zip-choice-label {
+      font-size: 0.88rem;
+      color: #94a3b8;
+      margin-bottom: 10px;
+    }
+    .zip-choice-btn {
+      display: block;
+      width: 100%;
+      margin: 5px 0;
+      background: #252b3b;
+      border: 1px solid #2d3548;
+      border-radius: 7px;
+      color: #e2e8f0;
+      padding: 9px 14px;
+      text-align: left;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .zip-choice-btn:hover { border-color: #6366f1; background: #1a1f2e; }
+
+    button { transition: opacity 0.15s, transform 0.1s; }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<h1>Texture Extractor</h1>
+<p class="subtitle">FBX · GLB · USDZ — wyciągaj i rename'uj textury</p>
+
+<!-- Lightbox -->
+<div id="lightbox">
+  <img id="lightbox-img" src="" alt="" />
+  <span id="lightbox-label"></span>
+</div>
+
+<div class="main-container">
+
+  <!-- Global settings bar -->
+  <div class="global-bar">
+    <div class="global-bar-row">
+      <span class="settings-label">Folder output:</span>
+      <input id="output-dir-input" placeholder="np. ./textures  lub  /home/wesol/exports  (puste = ZIP)" />
+      <button id="btn-browse" type="button" class="browse-btn" title="Wybierz folder">&#128194;</button>
+      <span id="output-hint" class="output-hint">brak → ZIP</span>
+    </div>
+    <div id="global-resolved-hint" class="global-resolved-hint">
+      <span id="global-resolved-text"></span>
+      <button id="btn-set-src-global" class="set-src-btn" style="display:none">&#128194; Wskaż folder źródłowy</button>
+    </div>
+    <div class="global-bar-actions">
+      <button id="lnk-pick" type="button">otwórz przez explorer</button>
+      <button id="btn-export-all" type="button">Zapisz wszystko</button>
+      <button id="btn-clear-all" type="button">Wyczyść</button>
+    </div>
+  </div>
+
+  <!-- Drop zone (always visible) -->
+  <div id="drop-zone">
+    <input type="file" id="file-input" accept=".fbx,.glb,.usdz,.zip" multiple />
+    <div class="drop-icon">&#128230;</div>
+    <div class="drop-text">Przeciągnij pliki (wiele naraz), <span>otwórz przez explorer</span> lub kliknij strefę</div>
+    <div class="drop-formats">FBX · GLB · USDZ · ZIP</div>
+  </div>
+
+  <!-- Session cards -->
+  <div id="sessions-container"></div>
+
+</div>
+
+<script>
+'use strict';
+
+// ── PBR suffix groups ──────────────────────────────────────────────────────
+const PBR_GROUPS = [
+  { label: 'Kolor',   items: ['_diffuse', '_albedo', '_basecolor', '_color'] },
+  { label: 'Surface', items: ['_normal', '_roughness', '_metallic', '_specular', '_glossiness'] },
+  { label: 'Extra',   items: ['_ao', '_emissive', '_height', '_opacity', '_mask', '_bump', '_displacement'] },
+];
+
+// ── Session registry ───────────────────────────────────────────────────────
+// Map<cardId, { cardEl, sessionId, textureData, filename }>
+const sessions = new Map();
+
+// ── Global output dir ──────────────────────────────────────────────────────
+const STORAGE_KEY = 'texture_extractor_output_dir';
+const outputDirInput     = document.getElementById('output-dir-input');
+const outputHint         = document.getElementById('output-hint');
+const btnBrowse          = document.getElementById('btn-browse');
+const globalResolvedHint = document.getElementById('global-resolved-hint');
+const globalResolvedText = document.getElementById('global-resolved-text');
+const btnSetSrcGlobal    = document.getElementById('btn-set-src-global');
+const btnExportAll       = document.getElementById('btn-export-all');
+const btnClearAll        = document.getElementById('btn-clear-all');
+const lnkPick            = document.getElementById('lnk-pick');
+const dropZone           = document.getElementById('drop-zone');
+const fileInput          = document.getElementById('file-input');
+const sessionsContainer  = document.getElementById('sessions-container');
+
+outputDirInput.value = localStorage.getItem(STORAGE_KEY) || '';
+updateGlobalOutputHint();
+
+outputDirInput.addEventListener('input', () => {
+  localStorage.setItem(STORAGE_KEY, outputDirInput.value.trim());
+  updateGlobalOutputHint();
+  scheduleGlobalResolve();
+});
+
+function updateGlobalOutputHint() {
+  const val = outputDirInput.value.trim();
+  if (val) {
+    outputDirInput.classList.add('has-value');
+    const isRelative = !val.startsWith('/') && !val.startsWith('~');
+    outputHint.textContent = isRelative ? '(ścieżka relatywna)' : `→ ${val}/`;
+  } else {
+    outputHint.textContent = 'brak → ZIP';
+    outputDirInput.classList.remove('has-value');
+    globalResolvedHint.style.display = 'none';
+  }
+}
+
+// Browse folder (zenity)
+btnBrowse.addEventListener('click', async () => {
+  btnBrowse.disabled = true;
+  try {
+    const res = await fetch('/browse-folder');
+    const data = await res.json();
+    if (data.path) {
+      outputDirInput.value = data.path;
+      localStorage.setItem(STORAGE_KEY, data.path);
+      updateGlobalOutputHint();
+      scheduleGlobalResolve();
+    }
+  } finally {
+    btnBrowse.disabled = false;
+  }
+});
+
+// Resolve debounce
+let globalResolveTimer = null;
+function scheduleGlobalResolve() {
+  clearTimeout(globalResolveTimer);
+  globalResolveTimer = setTimeout(resolveGlobalOutputPath, 400);
+}
+
+// Pick the most recently added session's id for resolve
+function getActiveSessionId() {
+  for (const [, s] of [...sessions].reverse()) {
+    if (s.sessionId) return s.sessionId;
+  }
+  return null;
+}
+
+btnSetSrcGlobal.addEventListener('click', async () => {
+  const sid = getActiveSessionId();
+  if (!sid) return;
+  btnSetSrcGlobal.disabled = true;
+  btnSetSrcGlobal.textContent = 'wybieranie…';
+  try {
+    const res = await fetch(`/set-src-dir/${sid}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.src_dir) resolveGlobalOutputPath();
+  } finally {
+    btnSetSrcGlobal.disabled = false;
+    btnSetSrcGlobal.textContent = '\u{1F4C1} Wskaż folder źródłowy';
+  }
+});
+
+async function resolveGlobalOutputPath() {
+  const val = outputDirInput.value.trim();
+  if (!val) { globalResolvedHint.style.display = 'none'; return; }
+  if (val.startsWith('/') || (val.length > 2 && val[1] === ':')) {
+    globalResolvedHint.style.display = 'none'; return;
+  }
+  const params = new URLSearchParams({ path: val });
+  const sid = getActiveSessionId();
+  if (sid) params.set('session_id', sid);
+  try {
+    const res = await fetch('/resolve-path?' + params);
+    const data = await res.json();
+    globalResolvedText.textContent = '→ ' + data.resolved + '/';
+    globalResolvedHint.className = 'global-resolved-hint ' + (data.src_dir_known ? 'absolute' : 'relative');
+    btnSetSrcGlobal.style.display = data.src_dir_known ? 'none' : 'inline-block';
+    globalResolvedHint.style.display = 'flex';
+  } catch {}
+}
+
+// ── Lightbox ──────────────────────────────────────────────────────────────
+const lightbox      = document.getElementById('lightbox');
+const lightboxImg   = document.getElementById('lightbox-img');
+const lightboxLabel = document.getElementById('lightbox-label');
+
+document.addEventListener('click', e => {
+  const thumb = e.target.closest('.thumb');
+  if (thumb) {
+    lightboxImg.src = thumb.src;
+    lightboxLabel.textContent = thumb.dataset.name || '';
+    lightbox.classList.add('open');
+    return;
+  }
+  if (e.target === lightbox || lightbox.contains(e.target)) {
+    lightbox.classList.remove('open');
+    lightboxImg.src = '';
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { lightbox.classList.remove('open'); lightboxImg.src = ''; }
+});
+
+// ── Suffix dropdown helpers ────────────────────────────────────────────────
+function buildSuffixMenu(menu, input) {
+  menu.innerHTML = '';
+  PBR_GROUPS.forEach((group, gi) => {
+    if (gi > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'menu-sep';
+      menu.appendChild(sep);
+    }
+    const gl = document.createElement('div');
+    gl.className = 'suffix-menu-group-label';
+    gl.textContent = group.label;
+    menu.appendChild(gl);
+    group.items.forEach(val => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = val;
+      btn.addEventListener('mousedown', e => {
+        e.preventDefault();
+        input.value = val;
+        input.classList.toggle('modified', val !== input.dataset.orig);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        menu.classList.remove('open');
+      });
+      menu.appendChild(btn);
+    });
+  });
+}
+
+// Close all open suffix menus
+function closeAllSuffixMenus(except) {
+  document.querySelectorAll('.suffix-menu.open').forEach(m => {
+    if (m !== except) m.classList.remove('open');
+  });
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.suffix-wrap')) closeAllSuffixMenus(null);
+});
+
+// Delegate suffix drop-btn clicks on the container
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.suffix-drop-btn');
+  if (!btn) return;
+  e.stopPropagation();
+  const wrap = btn.closest('.suffix-wrap');
+  const menu = wrap.querySelector('.suffix-menu');
+  const input = wrap.querySelector('.suffix-input');
+  const isOpen = menu.classList.contains('open');
+  closeAllSuffixMenus(null);
+  if (!isOpen) {
+    if (!menu.children.length) buildSuffixMenu(menu, input);
+    menu.classList.add('open');
+  }
+});
+
+// ── UUID helper ────────────────────────────────────────────────────────────
+function uuid() {
+  return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+}
+
+// ── Create a new session card (loading state) ─────────────────────────────
+function createCard(filename) {
+  const cardId = 'card-' + uuid();
+  const ext = (filename.match(/\.([^.]+)$/) || ['', ''])[1].toUpperCase();
+
+  const card = document.createElement('div');
+  card.className = 'session-card';
+  card.id = cardId;
+
+  card.innerHTML = `
+    <div class="card-header">
+      <span class="card-filename">${escHtml(filename)}</span>
+      ${ext ? `<span class="card-format-badge">${escHtml(ext)}</span>` : ''}
+      <button class="card-collapse-btn" title="Zwiń/rozwiń">&#9660;</button>
+      <button class="card-remove-btn" title="Usuń kartę">&#10005;</button>
+    </div>
+    <div class="card-body">
+      <div class="card-progress-bar"><div class="card-progress-fill"></div></div>
+      <div class="card-status info">Wczytywanie ${escHtml(filename)}…</div>
+    </div>
+  `;
+
+  sessionsContainer.appendChild(card);
+
+  // Store minimal state
+  sessions.set(cardId, { cardEl: card, sessionId: null, textureData: [], filename });
+
+  // Wire collapse button
+  card.querySelector('.card-collapse-btn').addEventListener('click', () => {
+    const body = card.querySelector('.card-body');
+    const btn  = card.querySelector('.card-collapse-btn');
+    const collapsed = body.classList.toggle('collapsed');
+    btn.innerHTML = collapsed ? '&#9650;' : '&#9660;';
+  });
+
+  // Wire remove button
+  card.querySelector('.card-remove-btn').addEventListener('click', () => {
+    card.remove();
+    sessions.delete(cardId);
+  });
+
+  // Card is a drop target — dropping a file on it replaces content
+  card.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    card.classList.add('card-dragover');
+  });
+  card.addEventListener('dragleave', e => {
+    if (!card.contains(e.relatedTarget)) card.classList.remove('card-dragover');
+  });
+  card.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    card.classList.remove('card-dragover');
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      replaceCardContent(cardId, files[0]);
+    }
+  });
+
+  return cardId;
+}
+
+// ── Replace a card's content with a new file ──────────────────────────────
+function replaceCardContent(cardId, file) {
+  const s = sessions.get(cardId);
+  if (!s) return;
+  s.sessionId = null;
+  s.textureData = [];
+  s.filename = file.name;
+
+  const card = s.cardEl;
+  const ext = (file.name.match(/\.([^.]+)$/) || ['', ''])[1].toUpperCase();
+
+  // Update header
+  card.querySelector('.card-filename').textContent = file.name;
+  const badge = card.querySelector('.card-format-badge');
+  if (badge) badge.textContent = ext;
+
+  // Reset body
+  const body = card.querySelector('.card-body');
+  body.classList.remove('collapsed');
+  card.querySelector('.card-collapse-btn').innerHTML = '&#9660;';
+  body.innerHTML = `
+    <div class="card-progress-bar"><div class="card-progress-fill"></div></div>
+    <div class="card-status info">Wczytywanie ${escHtml(file.name)}…</div>
+  `;
+
+  uploadFileToCard(cardId, file);
+}
+
+// ── Update card header (filename + badge) ─────────────────────────────────
+function setCardHeader(cardId, filename) {
+  const s = sessions.get(cardId);
+  if (!s) return;
+  s.filename = filename;
+  const card = s.cardEl;
+  const ext = (filename.match(/\.([^.]+)$/) || ['', ''])[1].toUpperCase();
+  card.querySelector('.card-filename').textContent = filename;
+  const badge = card.querySelector('.card-format-badge');
+  if (badge) badge.textContent = ext;
+}
+
+// ── Render card body after successful upload ───────────────────────────────
+function renderCardBody(cardId, sessionId, textures, modelStem) {
+  const s = sessions.get(cardId);
+  if (!s) return;
+  s.sessionId = sessionId;
+  s.textureData = textures;
+
+  const card = s.cardEl;
+  const body = card.querySelector('.card-body');
+
+  const hasTextures = textures.length > 0;
+
+  body.innerHTML = `
+    <div class="card-status"></div>
+
+    <div class="section-title">Nazwa bazowa</div>
+    <div class="base-name-row">
+      <span class="base-name-label">Baza</span>
+      <input class="base-name-input" type="text" spellcheck="false" value="${escHtml(modelStem)}" />
+      <span class="base-name-preview"></span>
+    </div>
+
+    ${hasTextures ? `
+    <div class="section-title">Textury</div>
+    <div class="texture-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>#</th>
+            <th>Oryginalna nazwa</th>
+            <th>Format</th>
+            <th>Rozmiar</th>
+            <th>Sufiks</th>
+            <th>Wynik</th>
+          </tr>
+        </thead>
+        <tbody class="texture-rows"></tbody>
+      </table>
+    </div>
+    ` : `
+    <div class="no-texture-msg">Brak textur — plik zostanie skopiowany z nową nazwą bazową.</div>
+    `}
+
+    <div class="card-actions">
+      <span class="card-actions-hint"></span>
+      <button class="btn-export-card" type="button">Eksportuj</button>
+    </div>
+    <div class="card-export-result"></div>
+  `;
+
+  const baseInput   = body.querySelector('.base-name-input');
+  const basePreview = body.querySelector('.base-name-preview');
+  const tbody       = body.querySelector('.texture-rows');
+  const actHint     = body.querySelector('.card-actions-hint');
+  const btnExport   = body.querySelector('.btn-export-card');
+  const exportRes   = body.querySelector('.card-export-result');
+
+  // Populate texture rows
+  if (hasTextures && tbody) {
+    textures.forEach(t => {
+      const tr = document.createElement('tr');
+      tr.dataset.format = t.format;
+      const origSuffix = t.suffix || '';
+      const previewUrl = `/preview/${sessionId}/${t.id}`;
+
+      tr.innerHTML = `
+        <td style="width:44px">
+          <img class="thumb" src="${previewUrl}" alt="${escHtml(t.orig_name)}"
+               data-id="${t.id}" data-name="${escHtml(t.orig_name)}" />
+        </td>
+        <td style="color:#475569">${t.id + 1}</td>
+        <td><span class="orig-cell" title="${escHtml(t.orig_name)}">${escHtml(t.orig_name)}</span></td>
+        <td><span class="badge">${escHtml(t.format)}</span></td>
+        <td><span class="size-cell">${t.size_kb} KB</span></td>
+        <td>
+          <div class="suffix-wrap">
+            <input class="suffix-input" data-id="${t.id}" data-orig="${escHtml(origSuffix)}" value="${escHtml(origSuffix)}" />
+            <button class="suffix-drop-btn" type="button" tabindex="-1">&#9660;</button>
+            <div class="suffix-menu"></div>
+          </div>
+        </td>
+        <td class="result-cell"></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Wire suffix input → update result cells
+    tbody.querySelectorAll('.suffix-input').forEach(inp => {
+      inp.addEventListener('input', () => {
+        inp.classList.toggle('modified', inp.value !== inp.dataset.orig);
+        updateResultCells(cardId);
+      });
+    });
+  }
+
+  // Wire base name input
+  baseInput.addEventListener('input', () => {
+    updateResultCells(cardId);
+    updateGlobalOutputHint();
+  });
+
+  // Initial result render
+  updateResultCells(cardId);
+
+  // Update export button label based on output dir
+  function refreshExportLabel() {
+    const val = outputDirInput.value.trim();
+    btnExport.textContent = val ? 'Zapisz na dysk' : 'Eksportuj ZIP';
+  }
+  refreshExportLabel();
+  outputDirInput.addEventListener('input', refreshExportLabel);
+
+  // Export button
+  btnExport.addEventListener('click', () => exportCard(cardId));
+
+  // Show status in card
+  if (!hasTextures) {
+    showCardStatus(cardId, 'Brak embedded textur — plik zostanie skopiowany.', 'info');
+  } else {
+    showCardStatus(cardId, `Znaleziono ${textures.length} textur.`, 'ok');
+  }
+
+  // Update action hint
+  actHint.textContent = hasTextures ? `${textures.length} textur` : 'brak textur';
+}
+
+// ── Update result cells for a card ────────────────────────────────────────
+function updateResultCells(cardId) {
+  const s = sessions.get(cardId);
+  if (!s) return;
+  const body       = s.cardEl.querySelector('.card-body');
+  const baseInput  = body.querySelector('.base-name-input');
+  const preview    = body.querySelector('.base-name-preview');
+  const tbody      = body.querySelector('.texture-rows');
+  if (!baseInput) return;
+  const base = baseInput.value.trim();
+
+  if (tbody) {
+    tbody.querySelectorAll('tr').forEach(tr => {
+      const suffixInp  = tr.querySelector('.suffix-input');
+      const resultCell = tr.querySelector('.result-cell');
+      if (!suffixInp || !resultCell) return;
+      const format = tr.dataset.format;
+      const ext    = '.' + format.toLowerCase();
+      const suffix = suffixInp.value;
+      resultCell.innerHTML = base
+        ? `<span class="result-base">${escHtml(base)}</span><span class="result-suffix">${escHtml(suffix)}</span><span class="result-ext">${escHtml(ext)}</span>`
+        : `<span style="color:#3d4a63">—</span>`;
+    });
+  }
+
+  // Base name preview
+  if (preview) {
+    if (base && s.textureData.length) {
+      const parts = s.textureData.slice(0, 3).map(t => {
+        const inp = tbody ? tbody.querySelector(`[data-id="${t.id}"]`) : null;
+        const suffix = inp ? inp.value : (t.suffix || '');
+        return base + suffix + '.' + t.format.toLowerCase();
+      });
+      preview.textContent = parts.join(', ') + (s.textureData.length > 3 ? '…' : '');
+    } else {
+      preview.textContent = '';
+    }
+  }
+}
+
+// ── Show status inside a card ──────────────────────────────────────────────
+function showCardStatus(cardId, msg, type) {
+  const s = sessions.get(cardId);
+  if (!s) return;
+  const el = s.cardEl.querySelector('.card-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'card-status ' + type;
+}
+
+// ── Card progress ──────────────────────────────────────────────────────────
+function setCardProgress(cardId, pct) {
+  const s = sessions.get(cardId);
+  if (!s) return;
+  const bar  = s.cardEl.querySelector('.card-progress-bar');
+  const fill = s.cardEl.querySelector('.card-progress-fill');
+  if (!bar || !fill) return;
+  bar.style.display = 'block';
+  fill.style.width = pct + '%';
+  if (pct >= 100) setTimeout(() => { bar.style.display = 'none'; }, 400);
+}
+
+// ── Upload file to a card ──────────────────────────────────────────────────
+async function uploadFileToCard(cardId, file) {
+  setCardProgress(cardId, 20);
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const res = await fetch('/upload', { method: 'POST', body: form });
+    setCardProgress(cardId, 60);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Błąd serwera');
+
+    if (data.zip_choice) {
+      setCardProgress(cardId, 100);
+      renderZipChoice(cardId, data);
+      return;
+    }
+
+    setCardProgress(cardId, 100);
+    const modelStem = data.filename.replace(/\.[^.]+$/, '');
+    setCardHeader(cardId, data.filename);
+    renderCardBody(cardId, data.session_id, data.textures, modelStem);
+    scheduleGlobalResolve();
+  } catch (err) {
+    setCardProgress(cardId, 0);
+    showCardStatus(cardId, `Błąd: ${err.message}`, 'error');
+  }
+}
+
+// ── ZIP choice ─────────────────────────────────────────────────────────────
+function renderZipChoice(cardId, data) {
+  const s = sessions.get(cardId);
+  if (!s) return;
+  const body = s.cardEl.querySelector('.card-body');
+  body.innerHTML = `
+    <div class="card-status info">ZIP zawiera wiele plików 3D — wybierz który przetworzyć.</div>
+    <div class="zip-choice-wrap">
+      <div class="zip-choice-label">Wybierz plik z archiwum ZIP:</div>
+      ${data.files.map(f => `
+        <button class="zip-choice-btn" data-path="${escHtml(f.path)}" data-tmp="${escHtml(data.tmp_dir || '')}">
+          <span style="color:#818cf8">${escHtml(f.ext.slice(1).toUpperCase())}</span> &nbsp; ${escHtml(f.name)}
+        </button>
+      `).join('')}
+    </div>
+  `;
+  body.querySelectorAll('.zip-choice-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      showCardStatus(cardId, 'Wczytywanie…', 'info');
+      try {
+        const res = await fetch('/select-from-zip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: btn.dataset.path, tmp_dir: btn.dataset.tmp }),
+        });
+        const d = await res.json();
+        if (!res.ok) { showCardStatus(cardId, d.detail || 'Błąd', 'error'); return; }
+        const modelStem = d.filename.replace(/\.[^.]+$/, '');
+        setCardHeader(cardId, d.filename);
+        renderCardBody(cardId, d.session_id, d.textures, modelStem);
+        scheduleGlobalResolve();
+      } catch (err) {
+        showCardStatus(cardId, `Błąd: ${err.message}`, 'error');
+      }
+    });
+  });
+}
+
+// ── Export a single card ───────────────────────────────────────────────────
+async function exportCard(cardId) {
+  const s = sessions.get(cardId);
+  if (!s || !s.sessionId) return;
+
+  const body      = s.cardEl.querySelector('.card-body');
+  const baseInput = body.querySelector('.base-name-input');
+  const tbody     = body.querySelector('.texture-rows');
+  const btnExport = body.querySelector('.btn-export-card');
+  const exportRes = body.querySelector('.card-export-result');
+
+  btnExport.disabled = true;
+  exportRes.className = 'card-export-result';
+
+  const base = baseInput ? baseInput.value.trim() : '';
+  const textures = [];
+  if (tbody) {
+    tbody.querySelectorAll('.suffix-input').forEach(inp => {
+      const t = s.textureData.find(x => x.id === parseInt(inp.dataset.id));
+      if (!t) return;
+      const ext     = '.' + t.format.toLowerCase();
+      const suffix  = inp.value;
+      const newName = base ? (base + suffix + ext) : (t.orig_name);
+      textures.push({ id: t.id, new_name: newName });
+    });
+  }
+
+  // Resolve output dir
+  let outputDir = outputDirInput.value.trim() || null;
+  if (outputDir && !outputDir.startsWith('/') && !outputDir.startsWith('~')) {
+    const params = new URLSearchParams({ path: outputDir });
+    if (s.sessionId) params.set('session_id', s.sessionId);
+    try {
+      const rr = await fetch('/resolve-path?' + params);
+      const rd = await rr.json();
+      outputDir = rd.resolved;
+    } catch {}
+  }
+
+  try {
+    const res = await fetch(`/export/${s.sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ textures, output_dir: outputDir, base_name: base || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Błąd eksportu');
+
+    if (data.saved_to) {
+      exportRes.textContent = `Zapisano ${data.files.length} plik(ów) → ${data.saved_to}`;
+      exportRes.className = 'card-export-result ok';
+    } else {
+      const a = document.createElement('a');
+      a.href = data.download_url;
+      a.click();
+      exportRes.textContent = 'ZIP gotowy — pobieranie rozpoczęte.';
+      exportRes.className = 'card-export-result ok';
+    }
+  } catch (err) {
+    exportRes.textContent = `Błąd eksportu: ${err.message}`;
+    exportRes.className = 'card-export-result err';
+  } finally {
+    btnExport.disabled = false;
+  }
+}
+
+// ── Export all cards ───────────────────────────────────────────────────────
+btnExportAll.addEventListener('click', async () => {
+  const cardIds = [...sessions.keys()];
+  if (cardIds.length === 0) return;
+  btnExportAll.disabled = true;
+  try {
+    for (const cardId of cardIds) {
+      const s = sessions.get(cardId);
+      if (s && s.sessionId) await exportCard(cardId);
+    }
+  } finally {
+    btnExportAll.disabled = false;
+  }
+});
+
+// ── Clear all ─────────────────────────────────────────────────────────────
+btnClearAll.addEventListener('click', () => {
+  sessions.clear();
+  sessionsContainer.innerHTML = '';
+});
+
+// ── Pick source (zenity file picker) ──────────────────────────────────────
+lnkPick.addEventListener('click', async () => {
+  lnkPick.disabled = true;
+  lnkPick.textContent = 'otwieranie…';
+  try {
+    const res = await fetch('/pick-source', { method: 'POST' });
+    const data = await res.json();
+    if (data.cancelled) return;
+
+    const filename = data.filename || 'plik';
+    // Do wykrywania duplikatów używamy nazwy ZIP (jeśli plik pochodzi z ZIP) lub nazwy pliku
+    const trackName = data.zip_filename || filename;
+    // Sprawdź duplikat
+    for (const [, s] of sessions) {
+      if (s.origFilename === trackName) {
+        showToast(`"${trackName}" jest już załadowany`);
+        return;
+      }
+    }
+    const cardId = createCard(filename);
+    const s = sessions.get(cardId);
+    s.origFilename = trackName;
+
+    if (data.zip_choice) {
+      renderZipChoice(cardId, data);
+      return;
+    }
+
+    const modelStem = data.filename.replace(/\.[^.]+$/, '');
+    setCardHeader(cardId, data.filename);
+    renderCardBody(cardId, data.session_id, data.textures, modelStem);
+    scheduleGlobalResolve();
+  } catch (err) {
+    // create error card
+    const cardId = createCard('błąd');
+    showCardStatus(cardId, `Błąd: ${err.message}`, 'error');
+  } finally {
+    lnkPick.disabled = false;
+    lnkPick.textContent = 'otwórz przez explorer';
+  }
+});
+
+// ── Drop zone (global, adds new cards) ────────────────────────────────────
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+dropZone.addEventListener('dragleave', e => {
+  if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('dragover');
+});
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  if (files && files.length > 0) {
+    for (const file of files) addNewCardForFile(file);
+  }
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files && fileInput.files.length > 0) {
+    for (const file of fileInput.files) addNewCardForFile(file);
+    fileInput.value = '';
+  }
+});
+
+function addNewCardForFile(file) {
+  // Sprawdź duplikat po oryginalnej nazwie wrzuconego pliku
+  for (const [, s] of sessions) {
+    if (s.origFilename === file.name) {
+      showToast(`"${file.name}" jest już załadowany`);
+      return;
+    }
+  }
+  const cardId = createCard(file.name);
+  sessions.get(cardId).origFilename = file.name;
+  uploadFileToCard(cardId, file);
+}
+
+// ── Toast notification ────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.remove(), 300);
+  }, 3000);
+}
+
+// ── Escape HTML helper ─────────────────────────────────────────────────────
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Initial resolve if there's a saved path
+if (outputDirInput.value.trim()) scheduleGlobalResolve();
+</script>
+</body>
+</html>
