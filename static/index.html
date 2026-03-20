@@ -148,6 +148,8 @@
     .strip-tex-wrap { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: #94a3b8; cursor: pointer; white-space: nowrap; }
     .strip-tex-cb { accent-color: #6366f1; cursor: pointer; }
     .model-name-preview { color: #475569; font-size: 0.76rem; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+    .btn-preset-ue { background: #1e3a5f; color: #93c5fd; border: 1px solid #2563eb44; border-radius: 6px; padding: 5px 10px; font-size: 0.78rem; font-weight: 600; cursor: pointer; white-space: nowrap; letter-spacing: 0.03em; }
+    .btn-preset-ue:hover { background: #1e4a8f; border-color: #3b82f6; color: #bfdbfe; }
   </style>
 </head>
 <body>
@@ -737,6 +739,7 @@ function renderCardBody(cardId, entries, modelStem) {
         <option value="T_">T_</option>
       </select>
       ${s.srcExt==='.fbx' ? '<label class="strip-tex-wrap"><input type="checkbox" class="strip-tex-cb" checked> Strip FBX</label>' : ''}
+      <button class="btn-preset-ue" type="button" title="SM_ + T_ + textury zostają w FBX z nowymi nazwami">UE Preset</button>
       <span class="model-name-preview"></span>
       <span class="base-name-preview"></span>
     </div>
@@ -786,6 +789,15 @@ function renderCardBody(cardId, entries, modelStem) {
   body.querySelector('.base-name-input').addEventListener('input', () => updateResultCells(cardId));
   body.querySelectorAll('.mesh-prefix-select, .tex-prefix-select').forEach(sel => {
     sel.addEventListener('change', () => updateResultCells(cardId));
+  });
+  body.querySelector('.btn-preset-ue').addEventListener('click', () => {
+    const meshSel = body.querySelector('.mesh-prefix-select');
+    const texSel  = body.querySelector('.tex-prefix-select');
+    const stripCb = body.querySelector('.strip-tex-cb');
+    if (meshSel) meshSel.value = 'SM_';
+    if (texSel)  texSel.value  = 'T_';
+    if (stripCb) stripCb.checked = false;
+    updateResultCells(cardId);
   });
   updateResultCells(cardId);
   body.querySelector('.btn-export-card').addEventListener('click', () => exportCard(cardId));
