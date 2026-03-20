@@ -291,8 +291,7 @@ function detectSuffixes(entries) {
   const stems = entries.map(e => e.suggested.replace(/\.[^.]+$/,''));
   const pbr = stems.map(extractPBRSuffix);
   if (pbr.some(p => p !== null)) {
-    let idx = 0;
-    return pbr.map(p => p !== null ? p : `_${idx++}`);
+    return pbr.map(p => p !== null ? p : '_diffuse');
   }
   let common = stems[0];
   for (const s of stems.slice(1)) {
