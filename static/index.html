@@ -36,6 +36,17 @@
       cursor: pointer; transition: border-color 0.15s, color 0.15s;
     }
     #btn-clear-all:hover { border-color: #ef4444; color: #ef4444; }
+    #btn-pick-dir {
+      background: #252b3b; border: 1px solid #2d3548; border-radius: 8px;
+      color: #94a3b8; padding: 7px 14px; font-size: 0.85rem; font-weight: 500;
+      cursor: pointer; transition: border-color 0.15s, color 0.15s; white-space: nowrap;
+    }
+    #btn-pick-dir:hover { border-color: #6366f1; color: #e2e8f0; }
+    #dir-label {
+      font-size: 0.78rem; font-family: 'JetBrains Mono', monospace;
+      color: #16a34a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 340px; display: none;
+    }
 
     /* Toast */
     .toast {
@@ -146,6 +157,8 @@
 
 <div class="main-container">
   <div class="global-bar">
+    <button id="btn-pick-dir" type="button">&#128194; Folder docelowy</button>
+    <span id="dir-label"></span>
     <button id="btn-export-all" type="button">Zapisz wszystko</button>
     <button id="btn-clear-all" type="button">Wyczyść</button>
   </div>
@@ -183,6 +196,42 @@ const PBR_KEYWORDS = [
 ];
 const IMAGE_EXTS = new Set(['.png','.jpg','.jpeg','.tif','.tiff','.bmp','.dds','.exr','.tga']);
 const MODEL_EXTS = new Set(['.fbx','.glb','.usdz']);
+
+// ── Target directory (File System Access API) ──────────────────────────────
+let targetDirHandle = null;
+const btnPickDir = document.getElementById('btn-pick-dir');
+const dirLabel   = document.getElementById('dir-label');
+const fsaSupported = 'showDirectoryPicker' in window;
+
+if (!fsaSupported) {
+  btnPickDir.title = 'Twoja przeglądarka nie obsługuje wyboru folderu — pliki będą pobierane jako ZIP';
+  btnPickDir.style.opacity = '0.45';
+  btnPickDir.style.cursor = 'not-allowed';
+}
+
+btnPickDir.addEventListener('click', async () => {
+  if (!fsaSupported) { showToast('Użyj Chrome lub Edge aby zapisywać bezpośrednio do folderu'); return; }
+  try {
+    targetDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    dirLabel.textContent = '→ ' + targetDirHandle.name + '/';
+    dirLabel.style.display = 'inline';
+    document.querySelectorAll('.btn-export-card').forEach(b => b.textContent = 'Zapisz plik');
+  } catch(e) {
+    if (e.name !== 'AbortError') showToast('Błąd wyboru folderu: ' + e.message);
+  }
+});
+
+async function writeFilesToDir(dirHandle, baseName, files) {
+  // Create subfolder baseName/
+  const subDir = await dirHandle.getDirectoryHandle(baseName, { create: true });
+  for (const { name, data } of files) {
+    const fh = await subDir.getFileHandle(name, { create: true });
+    const w  = await fh.createWritable();
+    await w.write(data instanceof Uint8Array ? data : new Uint8Array(data));
+    await w.close();
+  }
+  return subDir;
+}
 
 // ── Sessions ───────────────────────────────────────────────────────────────
 // Map<cardId, { cardEl, entries, filename, origFilename, srcBuffer, srcExt, blobUrls }>
@@ -517,23 +566,22 @@ async function exportCard(cardId) {
   const btnExport = body.querySelector('.btn-export-card');
   const exportRes = body.querySelector('.card-export-result');
   btnExport.disabled = true;
-  btnExport.textContent = 'Pakowanie…';
+  btnExport.textContent = 'Zapisywanie…';
   try {
     const baseName = body.querySelector('.base-name-input')?.value?.trim() ||
                      s.filename.replace(/\.[^.]+$/,'');
-    const zip = new JSZip();
     const renameMap = {};
+    const filesToSave = [];
     const tbody = body.querySelector('.texture-rows');
     if (tbody) {
       for (const tr of tbody.querySelectorAll('tr')) {
         const id = parseInt(tr.dataset.id||tr.querySelector('[data-id]')?.dataset.id);
         const entry = s.entries[id];
         if (!entry) continue;
-        const suffixInp = tr.querySelector('.suffix-input');
-        const suffix = suffixInp?.value ?? '';
+        const suffix = tr.querySelector('.suffix-input')?.value ?? '';
         const ext = detectExt(entry.data);
         const newName = baseName ? (baseName+suffix+ext) : entry.suggested;
-        zip.file(newName, entry.data);
+        filesToSave.push({ name: newName, data: entry.data });
         renameMap[entry.origName] = newName;
       }
     }
@@ -542,13 +590,23 @@ async function exportCard(cardId) {
       let model = null;
       if (s.srcExt==='.fbx') model = patchFBX(s.srcBuffer, renameMap, baseName);
       else if (s.srcExt==='.glb') model = patchGLB(s.srcBuffer, renameMap, baseName);
-      if (model) zip.file(model.name, model.data);
-      else zip.file(baseName+s.srcExt, s.srcBuffer);
+      filesToSave.push(model || { name: baseName+s.srcExt, data: new Uint8Array(s.srcBuffer) });
     }
-    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
-    downloadBlob(blob, baseName+'_textures.zip');
-    exportRes.className = 'card-export-result ok';
-    exportRes.textContent = `Pobrano: ${baseName}_textures.zip`;
+
+    if (targetDirHandle) {
+      // Save directly to chosen folder → subfolder baseName/
+      await writeFilesToDir(targetDirHandle, baseName, filesToSave);
+      exportRes.className = 'card-export-result ok';
+      exportRes.textContent = `Zapisano → ${targetDirHandle.name}/${baseName}/  (${filesToSave.length} plików)`;
+    } else {
+      // Fallback: ZIP download
+      const zip = new JSZip();
+      filesToSave.forEach(f => zip.file(f.name, f.data));
+      const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+      downloadBlob(blob, baseName+'_textures.zip');
+      exportRes.className = 'card-export-result ok';
+      exportRes.textContent = `Pobrano: ${baseName}_textures.zip`;
+    }
   } catch(err) {
     exportRes.className = 'card-export-result err';
     exportRes.textContent = 'Błąd: '+err.message;
