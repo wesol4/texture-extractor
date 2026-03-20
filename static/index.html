@@ -109,6 +109,7 @@
     .suffix-input { background: #131720; border: 1px solid #2d3548; border-radius: 6px; color: #e2e8f0; padding: 5px 8px; font-size: 0.82rem; flex: 1; min-width: 0; font-family: 'JetBrains Mono', monospace; transition: border-color 0.15s; }
     .suffix-input:focus { outline: none; border-color: #6366f1; }
     .suffix-input.modified { border-color: #f59e0b88; }
+    .suffix-input.duplicate { border-color: #ef4444 !important; background: #3b1818; }
     .suffix-drop-btn { background: #131720; border: 1px solid #2d3548; border-radius: 6px; color: #64748b; padding: 5px 7px; cursor: pointer; font-size: 0.75rem; flex-shrink: 0; transition: border-color 0.15s, color 0.15s; }
     .suffix-drop-btn:hover { border-color: #6366f1; color: #e2e8f0; }
     .suffix-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; background: #1e2330; border: 1px solid #2d3548; border-radius: 8px; z-index: 200; min-width: 160px; box-shadow: 0 8px 24px #0006; overflow: hidden; }
@@ -761,7 +762,7 @@ function renderCardBody(cardId, entries, modelStem) {
       const ext = detectExt(e.data);
       const formatBadge = ext.slice(1).toUpperCase();
       const sizeKb = Math.round(e.data.length/1024);
-      const origSuffix = suffixes[i]||'';
+      const origSuffix = suffixes[i] || '_diffuse';
       const tr = document.createElement('tr');
       tr.dataset.id = String(i);
       tr.dataset.format = formatBadge;
@@ -828,6 +829,17 @@ function updateResultCells(cardId) {
   const modelPreview = body.querySelector('.model-name-preview');
   if (modelPreview) {
     modelPreview.textContent = base ? ('→ ' + meshPrefix + base + (s.srcExt||'')) : '';
+  }
+  if (tbody) {
+    const counts = {};
+    for (const tr of tbody.querySelectorAll('tr')) {
+      const v = tr.querySelector('.suffix-input')?.value;
+      if (v !== undefined) counts[v] = (counts[v]||0) + 1;
+    }
+    for (const tr of tbody.querySelectorAll('tr')) {
+      const inp = tr.querySelector('.suffix-input');
+      if (inp) inp.classList.toggle('duplicate', counts[inp.value] > 1);
+    }
   }
   const preview = body.querySelector('.base-name-preview');
   if (preview&&s.entries.length) {
